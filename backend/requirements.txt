@@ -1,0 +1,29 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+httpx>=0.24.0
+ 
+# OpenAI (Whisper STT)
+openai>=1.0.0
+ 
+# LangChain + Gemini (강유민 모듈 연동용)
+langchain>=0.2.0
+langchain-google-genai>=1.0.0
+google-generativeai>=0.5.0
+ 
+# Google Calendar OAuth2
+google-auth>=2.20.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.100.0
+ 
+# Firebase
+firebase-admin>=6.0.0
+ 
+# Neo4j
+neo4j>=5.0.0
+ 
+# Pydantic
+pydantic>=2.0.0
+ 
