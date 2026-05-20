@@ -1,10 +1,19 @@
 """
 온글 백엔드 — Pydantic 요청/응답 스키마 정의
-강유민이 확정한 JSON 스키마와 필드명을 맞춰주세요.
 """
 
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+from typing import Optional, List
+
+
+# ─── 카멜케이스 직렬화 베이스 (문서 관련 모델) ────────────────────────────────────
+
+class _CamelBase(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 
 # ─── STT (/transcribe) ────────────────────────────────────────────────────────
@@ -14,20 +23,42 @@ class TranscribeResponse(BaseModel):
     duration_seconds: Optional[float] = None
 
 
-# ─── LLM 문서 생성 결과 (강유민 스키마 기준) ────────────────────────────────────
+# ─── LLM 문서 생성 결과 ─────────────────────────────────────────────────────────
 
-class ActionItem(BaseModel):
-    task: str
-    assignee: Optional[str] = None
-    due: Optional[str] = None          # ISO 8601 (예: "2026-05-23")
+class DiscussionItem(_CamelBase):
+    topic: str
+    details: str
 
 
-class DocumentResult(BaseModel):
+class DocumentContent(_CamelBase):
+    summary: str
+    discussions: List[DiscussionItem] = []
+    decisions: List[str] = []
+
+
+class ActionItem(_CamelBase):
     title: str
-    participants: list[str]
-    content: str
-    action_items: list[ActionItem]
-    masked_fields: Optional[list[str]] = None   # Phase 2 마스킹 후 채워짐
+    assignee: Optional[str] = None
+    due_date: Optional[str] = None      # JSON: "dueDate"
+    completed: bool = False
+
+
+class MaskedField(_CamelBase):
+    # Phase 2 마스킹 작업 시 채워짐. Phase 1에서는 빈 배열로 둠.
+    # type 예시: "name" | "phone" | "rrn" | "address" | "disease"
+    #           | "card" | "email" | "account" | "businessNo" | "affiliation"
+    type: str
+    original: str   # 원본 텍스트 (예: "강유민")
+    masked: str     # 마스킹 결과 (예: "[NAME_1]")
+
+
+class DocumentResult(_CamelBase):
+    title: str
+    domain: str = "meeting"
+    participants: List[str] = []
+    content: DocumentContent
+    action_items: List[ActionItem] = []     # JSON: "actionItems"
+    masked_fields: List[MaskedField] = []   # JSON: "maskedFields"
 
 
 # ─── 통합 파이프라인 (/process) ────────────────────────────────────────────────
@@ -41,12 +72,12 @@ class ProcessResponse(BaseModel):
 # ─── Google Calendar (/schedule) ──────────────────────────────────────────────
 
 class ScheduleRequest(BaseModel):
-    action_items: list[ActionItem]
+    action_items: List[ActionItem]
     calendar_token: Optional[str] = None   # OAuth2 access token
 
 
 class ScheduleResponse(BaseModel):
-    created_events: list[str]          # 생성된 이벤트 ID 목록
+    created_events: List[str]
     message: str
 
 
@@ -65,22 +96,22 @@ class NotifyResponse(BaseModel):
 
 class DocumentRecord(BaseModel):
     doc_id: str
-    created_at: str                    # ISO 8601
-    domain: str                        # "meeting" | "consultation" | "welfare"
+    created_at: str                     # ISO 8601
+    domain: str                         # "meeting" | "consultation" | "welfare"
     result: DocumentResult
 
 
 class DocumentListResponse(BaseModel):
-    documents: list[DocumentRecord]
+    documents: List[DocumentRecord]
 
 
 # ─── Neo4j 그래프 (/graph) ────────────────────────────────────────────────────
 
 class Entity(BaseModel):
-    people: list[str]
-    topics: list[str]
-    decisions: list[str]
-    events: list[str]
+    people: List[str]
+    topics: List[str]
+    decisions: List[str]
+    events: List[str]
 
 
 class GraphRequest(BaseModel):
@@ -91,7 +122,7 @@ class GraphRequest(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    type: str                          # "Person" | "Topic" | "Decision" | "Meeting"
+    type: str                           # "Person" | "Topic" | "Decision" | "Meeting"
 
 
 class GraphEdge(BaseModel):
@@ -101,16 +132,16 @@ class GraphEdge(BaseModel):
 
 
 class GraphResponse(BaseModel):
-    nodes: list[GraphNode]
-    edges: list[GraphEdge]
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
 
 
 # ─── 자연어 질의 (/query-graph) ───────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
-    cypher: str                        # 강유민이 Gemini로 생성한 Cypher 쿼리
+    cypher: str                         # 강유민이 Gemini로 생성한 Cypher 쿼리
 
 
 class QueryResponse(BaseModel):
-    results: list[dict]
+    results: List[dict]
     summary: Optional[str] = None

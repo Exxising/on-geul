@@ -14,7 +14,7 @@ router = APIRouter(prefix="/process", tags=["Pipeline"])
 SUPPORTED_DOMAINS = {"meeting", "consultation", "welfare"}
 
 
-@router.post("", response_model=ProcessResponse)
+@router.post("", response_model=ProcessResponse, response_model_by_alias=True)
 async def process_audio(
     file: UploadFile = File(..., description="음성 파일 (mp3/wav/m4a, 최대 25MB)"),
     domain: str = Form(default="meeting", description="문서 도메인: meeting | consultation | welfare"),
