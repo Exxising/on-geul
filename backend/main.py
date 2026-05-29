@@ -5,13 +5,15 @@ AI Agent 기반 대화 자동 문서화 서비스
 실행: uvicorn main:app --reload --port 8000
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException
 from dotenv import load_dotenv
 import os
 
 # 라우터 임포트
-from routers import transcribe, process, schedule, notify, documents, graph
+from routers import transcribe, process, schedule, notify, documents, graph, mask
 
 load_dotenv()
 
@@ -38,13 +40,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── 전역 예외 핸들러 ───────────────────────────────────────────────────────────
+# 프론트엔드는 error.response.data.message 를 읽음 → detail → message 통일
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail},
+    )
+
+
 # ── 라우터 등록 ────────────────────────────────────────────────────────────────
+app.include_router(process.router)      # POST /process, POST /upload
+app.include_router(documents.router)    # GET  /documents/{id}  ← 폴링용
+app.include_router(mask.router)         # POST /mask            ← 마스킹
 app.include_router(transcribe.router)   # POST /transcribe
-app.include_router(process.router)      # POST /process
-app.include_router(schedule.router)     # POST /schedule      (Phase 2)
-app.include_router(notify.router)       # POST /notify        (Phase 2)
-app.include_router(documents.router)    # GET  /documents     (Phase 2)
-app.include_router(graph.router)        # POST /graph, GET /graph/{id}, POST /graph/query  (Phase 3)
+app.include_router(schedule.router)     # POST /schedule        (Phase 2)
+app.include_router(notify.router)       # POST /notify          (Phase 2)
+app.include_router(graph.router)        # GET  /graph/{id}, POST /query  (Phase 3)
 
 
 # ── 헬스체크 ───────────────────────────────────────────────────────────────────
