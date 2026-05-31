@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 .env
+on-geul-service-key.json
 *.egg-info/
 dist/
 build/

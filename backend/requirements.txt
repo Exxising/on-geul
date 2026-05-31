@@ -29,4 +29,3 @@ neo4j>=5.0.0
  
 # Pydantic
 pydantic>=2.0.0
- 
