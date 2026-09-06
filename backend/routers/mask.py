@@ -7,12 +7,17 @@ POST /mask — 개인정보 마스킹 엔드포인트
 """
 
 import re
+import os
+import logging
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Masking"])
+
+_DUMMY_MODE = os.getenv("DUMMY_MODE", "true").lower() == "true"
 
 
 class MaskRequest(BaseModel):
@@ -169,14 +174,35 @@ def _detect_and_mask(text: str, level: str, selected_types: Optional[Dict[str, b
     return masked_content, detected_items
 
 
+def _build_text_from_job(job: dict) -> str:
+    """_jobs 항목에서 마스킹용 본문 텍스트를 구성합니다."""
+    document = job.get("document")
+    if not document:
+        return ""
+    summary = document.content.summary
+    discussions_str = "\n".join(
+        f"• {d.topic}: {d.details}" for d in document.content.discussions
+    )
+    decisions_str = "\n".join(f"- {dec}" for dec in document.content.decisions)
+    parts = []
+    if summary:
+        parts.append(f"[요약]\n{summary}")
+    if discussions_str:
+        parts.append(f"[논의 내용]\n{discussions_str}")
+    if decisions_str:
+        parts.append(f"[결정 사항]\n{decisions_str}")
+    return "\n\n".join(parts)
+
+
 @router.post("/mask")
 async def mask_document(body: MaskRequest):
     """
-    회의록 본문 내 개인정보를 서버사이드 정규식으로 탐지·마스킹하여 반환합니다.
+    회의록 본문 내 개인정보를 탐지·마스킹하여 반환합니다.
+    DUMMY_MODE=false 시 Gemini LLM 사용, true 시 정규식 fallback.
 
     Response:
         maskedContent  - 마스킹 처리된 본문 문자열
-        detectedItems  - 탐지된 개인정보 목록 [{id, type, value, masked}]
+        detectedItems  - 탐지된 개인정보 목록 [{id, type, value, masked, level}]
     """
     from routers.process import get_job
 
@@ -187,28 +213,20 @@ async def mask_document(body: MaskRequest):
             content={"message": "존재하지 않는 문서 ID입니다."},
         )
 
-    # 문서 본문 텍스트 구성 (documents.py와 동일한 포맷팅)
-    document = job.get("document")
-    if document:
-        summary = document.content.summary
-        discussions_str = "\n".join(
-            f"• {d.topic}: {d.details}" for d in document.content.discussions
-        )
-        decisions_str = "\n".join(f"- {dec}" for dec in document.content.decisions)
+    text = _build_text_from_job(job)
+    level = body.level or "pseudonym"
 
-        parts = []
-        if summary:
-            parts.append(f"[요약]\n{summary}")
-        if discussions_str:
-            parts.append(f"[논의 내용]\n{discussions_str}")
-        if decisions_str:
-            parts.append(f"[결정 사항]\n{decisions_str}")
-        text = "\n\n".join(parts)
-    else:
-        text = ""
+    if not _DUMMY_MODE:
+        # LLM 마스킹 시도 (실패 시 regex로 fallback)
+        try:
+            from services.mask import mask_with_llm
+            masked_content, detected_items = await mask_with_llm(text, level, body.selectedTypes)
+            return {"maskedContent": masked_content, "detectedItems": detected_items}
+        except Exception as e:
+            logger.warning("LLM 마스킹 실패, regex로 대체: %s", e)
 
-    masked_content, detected_items = _detect_and_mask(text, body.level or "pseudonym", body.selectedTypes)
-
+    # regex fallback (DUMMY_MODE=true 또는 LLM 실패 시)
+    masked_content, detected_items = _detect_and_mask(text, level, body.selectedTypes)
     return {
         "maskedContent": masked_content,
         "detectedItems": detected_items,
